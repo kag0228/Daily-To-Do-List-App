@@ -1,0 +1,331 @@
+import React, { useState, useEffect } from 'react';
+import { Check, Plus, X, Archive, Calendar } from 'lucide-react';
+
+export default function DailyTodoApp() {
+  const [todos, setTodos] = useState([]);
+  const [accomplishments, setAccomplishments] = useState([]);
+  const [newTodo, setNewTodo] = useState('');
+  const [lastDate, setLastDate] = useState('');
+  const [showCarryOver, setShowCarryOver] = useState(false);
+  const [previousTodos, setPreviousTodos] = useState([]);
+  const [showAccomplishments, setShowAccomplishments] = useState(false);
+
+  const today = new Date().toLocaleDateString();
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const loadData = async () => {
+    try {
+      const todosResult = await window.storage.get('daily-todos');
+      const accsResult = await window.storage.get('accomplishments');
+      const dateResult = await window.storage.get('last-date');
+
+      if (accsResult) {
+        setAccomplishments(JSON.parse(accsResult.value));
+      }
+
+      if (dateResult) {
+        const savedDate = dateResult.value;
+        setLastDate(savedDate);
+
+        if (savedDate !== today && todosResult) {
+          const oldTodos = JSON.parse(todosResult.value);
+          if (oldTodos.length > 0) {
+            setPreviousTodos(oldTodos);
+            setShowCarryOver(true);
+          }
+        } else if (todosResult) {
+          setTodos(JSON.parse(todosResult.value));
+        }
+      } else if (todosResult) {
+        setTodos(JSON.parse(todosResult.value));
+      }
+
+      if (!dateResult || dateResult.value !== today) {
+        await window.storage.set('last-date', today);
+        setLastDate(today);
+      }
+    } catch (error) {
+      console.error('Error loading data:', error);
+    }
+  };
+
+  const saveTodos = async (updatedTodos) => {
+    try {
+      await window.storage.set('daily-todos', JSON.stringify(updatedTodos));
+    } catch (error) {
+      console.error('Error saving todos:', error);
+    }
+  };
+
+  const saveAccomplishments = async (updatedAccs) => {
+    try {
+      await window.storage.set('accomplishments', JSON.stringify(updatedAccs));
+    } catch (error) {
+      console.error('Error saving accomplishments:', error);
+    }
+  };
+
+  const addTodo = () => {
+    if (newTodo.trim()) {
+      const updated = [...todos, { id: Date.now(), text: newTodo, createdAt: today }];
+      setTodos(updated);
+      saveTodos(updated);
+      setNewTodo('');
+    }
+  };
+
+  const completeTodo = (id) => {
+    const todo = todos.find(t => t.id === id);
+    const updated = todos.filter(t => t.id !== id);
+    setTodos(updated);
+    saveTodos(updated);
+
+    const newAcc = {
+      id: Date.now(),
+      text: todo.text,
+      completedAt: today,
+      createdAt: todo.createdAt
+    };
+    const updatedAccs = [newAcc, ...accomplishments];
+    setAccomplishments(updatedAccs);
+    saveAccomplishments(updatedAccs);
+  };
+
+  const deleteTodo = (id) => {
+    const updated = todos.filter(t => t.id !== id);
+    setTodos(updated);
+    saveTodos(updated);
+  };
+
+  const carryOverSelected = (selectedIds) => {
+    const carried = previousTodos
+      .filter(t => selectedIds.includes(t.id))
+      .map(t => ({ ...t, id: Date.now() + Math.random(), createdAt: today }));
+    
+    const updated = [...carried, ...todos];
+    setTodos(updated);
+    saveTodos(updated);
+    setShowCarryOver(false);
+    setPreviousTodos([]);
+  };
+
+  const skipCarryOver = () => {
+    setShowCarryOver(false);
+    setPreviousTodos([]);
+  };
+
+  if (showCarryOver) {
+    return <CarryOverDialog 
+      todos={previousTodos}
+      onConfirm={carryOverSelected}
+      onSkip={skipCarryOver}
+    />;
+  }
+
+  if (showAccomplishments) {
+    return <AccomplishmentsView 
+      accomplishments={accomplishments}
+      onBack={() => setShowAccomplishments(false)}
+    />;
+  }
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-6 mb-4">
+          <div className="flex items-center justify-between mb-6">
+            <div>
+              <h1 className="text-3xl font-bold text-gray-800">Daily To-Do List</h1>
+              <p className="text-gray-600 flex items-center gap-2 mt-1">
+                <Calendar size={16} />
+                {today}
+              </p>
+            </div>
+            <button
+              onClick={() => setShowAccomplishments(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Archive size={18} />
+              Accomplishments
+            </button>
+          </div>
+
+          <div className="flex gap-2 mb-6">
+            <input
+              type="text"
+              value={newTodo}
+              onChange={(e) => setNewTodo(e.target.value)}
+              onKeyPress={(e) => e.key === 'Enter' && addTodo()}
+              placeholder="Add a new task..."
+              className="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+            />
+            <button
+              onClick={addTodo}
+              className="px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              <Plus size={20} />
+              Add
+            </button>
+          </div>
+
+          <div className="space-y-2">
+            {todos.length === 0 ? (
+              <p className="text-center text-gray-500 py-8">No tasks for today. Add one to get started!</p>
+            ) : (
+              todos.map(todo => (
+                <div
+                  key={todo.id}
+                  className="flex items-center gap-3 p-4 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+                >
+                  <button
+                    onClick={() => completeTodo(todo.id)}
+                    className="flex-shrink-0 w-6 h-6 rounded-full border-2 border-green-600 hover:bg-green-600 hover:text-white transition-colors flex items-center justify-center"
+                  >
+                    <Check size={16} />
+                  </button>
+                  <span className="flex-1 text-gray-800">{todo.text}</span>
+                  <button
+                    onClick={() => deleteTodo(todo.id)}
+                    className="flex-shrink-0 text-red-600 hover:text-red-700"
+                  >
+                    <X size={20} />
+                  </button>
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CarryOverDialog({ todos, onConfirm, onSkip }) {
+  const [selected, setSelected] = useState([]);
+
+  const toggleSelect = (id) => {
+    setSelected(prev => 
+      prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]
+    );
+  };
+
+  const selectAll = () => {
+    setSelected(todos.map(t => t.id));
+  };
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6 flex items-center justify-center">
+      <div className="bg-white rounded-lg shadow-xl p-8 max-w-2xl w-full">
+        <h2 className="text-2xl font-bold text-gray-800 mb-4">Carry Over Tasks?</h2>
+        <p className="text-gray-600 mb-6">
+          You have {todos.length} incomplete task{todos.length !== 1 ? 's' : ''} from yesterday. 
+          Select which ones you'd like to carry over to today.
+        </p>
+
+        <div className="space-y-2 mb-6 max-h-96 overflow-y-auto">
+          {todos.map(todo => (
+            <div
+              key={todo.id}
+              onClick={() => toggleSelect(todo.id)}
+              className={`p-4 rounded-lg border-2 cursor-pointer transition-all ${
+                selected.includes(todo.id)
+                  ? 'border-blue-600 bg-blue-50'
+                  : 'border-gray-200 hover:border-gray-300'
+              }`}
+            >
+              <div className="flex items-center gap-3">
+                <div className={`w-5 h-5 rounded border-2 flex items-center justify-center ${
+                  selected.includes(todo.id) ? 'bg-blue-600 border-blue-600' : 'border-gray-400'
+                }`}>
+                  {selected.includes(todo.id) && <Check size={14} className="text-white" />}
+                </div>
+                <span className="text-gray-800">{todo.text}</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        <div className="flex gap-3">
+          <button
+            onClick={selectAll}
+            className="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg hover:bg-blue-50 transition-colors"
+          >
+            Select All
+          </button>
+          <button
+            onClick={() => onConfirm(selected)}
+            className="flex-1 px-6 py-3 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            Carry Over Selected ({selected.length})
+          </button>
+          <button
+            onClick={onSkip}
+            className="px-6 py-3 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+          >
+            Start Fresh
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AccomplishmentsView({ accomplishments, onBack }) {
+  const groupedByDate = accomplishments.reduce((acc, item) => {
+    const date = item.completedAt;
+    if (!acc[date]) acc[date] = [];
+    acc[date].push(item);
+    return acc;
+  }, {});
+
+  const sortedDates = Object.keys(groupedByDate).sort((a, b) => 
+    new Date(b) - new Date(a)
+  );
+
+  return (
+    <div className="min-h-screen bg-gradient-to-br from-green-50 to-emerald-100 p-6">
+      <div className="max-w-2xl mx-auto">
+        <div className="bg-white rounded-lg shadow-lg p-6">
+          <div className="flex items-center justify-between mb-6">
+            <h1 className="text-3xl font-bold text-gray-800">Accomplishments</h1>
+            <button
+              onClick={onBack}
+              className="px-4 py-2 bg-gray-300 text-gray-700 rounded-lg hover:bg-gray-400 transition-colors"
+            >
+              Back to To-Do
+            </button>
+          </div>
+
+          {accomplishments.length === 0 ? (
+            <p className="text-center text-gray-500 py-8">No accomplishments yet. Complete some tasks to see them here!</p>
+          ) : (
+            <div className="space-y-6">
+              {sortedDates.map(date => (
+                <div key={date} className="border-l-4 border-green-600 pl-4">
+                  <h3 className="font-semibold text-gray-700 mb-3 flex items-center gap-2">
+                    <Calendar size={16} />
+                    {date}
+                  </h3>
+                  <div className="space-y-2">
+                    {groupedByDate[date].map(acc => (
+                      <div
+                        key={acc.id}
+                        className="p-3 bg-green-50 rounded-lg text-gray-800 flex items-center gap-2"
+                      >
+                        <Check size={16} className="text-green-600 flex-shrink-0" />
+                        <span>{acc.text}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
